@@ -1,9 +1,13 @@
 import pygame
 import random
-
+import numpy as np
+import sounddevice as sd
 WIN_SIZE = (1000, 650)
 SPEED = 8
 BG_COLOR = "#2C64FF"
+sr = 16000
+block = 256
+mic_level = 0.0
 
 pygame.init()
 window = pygame.display.set_mode(WIN_SIZE)
@@ -17,7 +21,7 @@ class Button(pygame.Rect):
         self.colors_text = colors_text
         self.color = self.colors[0]
         self.text_str = text
-        self.font = pygame.font.SysFont("Robotic", 45, bold=True)
+        self.font = pygame.font.SysFont("Robotic", 80, bold=True)
         self.text = self.font.render(self.text_str, True, self.colors_text[0])
         self.clicked = False
 
@@ -54,8 +58,16 @@ def make_tubes(count, width=80, height_max=450, gap=150, interval=400):
         x += interval
     return tmp_list
 
+def audio_cb(indata, frames, time, status):
+    global mic_level
+    if status:
+        return 
+    rms = float(np.sqrt(np.mean(indata ** 2)))
+    mic_level = 0.05 * mic_level + 0.15 * rms
+
 title_font = pygame.font.SysFont("Robotic", 90, bold=True)
 title_text = title_font.render("FLAPPY BIRD", True, "yellow")
+
 
 score_font = pygame.font.SysFont("Robotic", 50, bold=True)
 
@@ -71,71 +83,82 @@ tube_list = make_tubes(100)
 passed_tubes = []
 score = 0
 
+
+y_vel = 0.0
+gravity = 0.6
+TRASH = 0.002
+IMPULSE = -8.0
 game = True
 which_window = "MENU"
 
-while game:
-    events = pygame.event.get()
-    for event in events:
-        if event.type == pygame.QUIT:
-            game = False
+with sd.InputStream(samplerate=sr, channels=1, blocksize=block, callback=audio_cb):
+    while game:
+        events = pygame.event.get()
+        for event in events:
+            if event.type == pygame.QUIT:
+                game = False
 
-    if which_window == "MENU":
-        window.fill(BG_COLOR)
-        window.blit(title_text, (WIN_SIZE[0] // 2 - title_text.get_width() // 2, 80))
-        
-        if score > 0:
-            last_score_text = score_font.render(f"SCORE: {score}", True, "yellow")
-            window.blit(last_score_text, (WIN_SIZE[0] // 2 - last_score_text.get_width() // 2, 180))
-        
-        play_button.draw(window)
-        close_button.draw(window)
+        if mic_level > TRASH:
+            y_vel = IMPULSE
+        y_vel += gravity
+        player.y += int(y_vel)
 
-        if play_button.active():
-            player.x = 20
-            player.y = 270
-            tube_list = make_tubes(100)
-            passed_tubes = []
-            score = 0
-            which_window = "GAME"
-        if close_button.active():
-            game = False
+        if which_window == "MENU":
+            window.fill(BG_COLOR)
+            window.blit(title_text, (WIN_SIZE[0] // 2 - title_text.get_width() // 2, 80))
 
-    elif which_window == "GAME":
-        window.fill("#2C64FF")
-        pygame.draw.rect(window, "yellow", player)
-        #шевелись блядо
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_w] and player.y > 0:
-            player.y -= SPEED
-        if keys[pygame.K_s] and player.bottom <= WIN_SIZE[1]:
-            player.y += SPEED
-            
-        for i in range(0, len(tube_list), 2):
-            top_tube = tube_list[i]
-            bottom_tube = tube_list[i + 1]
-            
-            pygame.draw.rect(window, "#30E04D", top_tube)
-            pygame.draw.rect(window, "#30E04D", bottom_tube)
-            
-            top_tube.x -= 5
-            bottom_tube.x -= 5
-        #просрав лох 
-            if player.colliderect(top_tube) or player.colliderect(bottom_tube):
+            if score > 0:
+                last_score_text = score_font.render(f"SCORE: {score}", True, "yellow")
+                window.blit(last_score_text, (WIN_SIZE[0] // 2 - last_score_text.get_width() // 2, 180))
+
+            play_button.draw(window)
+            close_button.draw(window)
+
+            if play_button.active():
+                player.x = 20
+                player.y = 270
+                tube_list = make_tubes(100)
+                passed_tubes = []
+                score = 0
+                which_window = "GAME"
+            if close_button.active():
+                game = False
+
+        elif which_window == "GAME":
+            window.fill("#2C64FF")
+            pygame.draw.rect(window, "yellow", player)
+            #шевелись блядо
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_w] and player.y > 0:
+                player.y -= SPEED
+            if keys[pygame.K_s] and player.bottom <= WIN_SIZE[1]:
+                player.y += SPEED
+
+            for i in range(0, len(tube_list), 2):
+                top_tube = tube_list[i]
+                bottom_tube = tube_list[i + 1]
+
+                pygame.draw.rect(window, "#30E04D", top_tube)
+                pygame.draw.rect(window, "#30E04D", bottom_tube)
+
+                top_tube.x -= 5
+                bottom_tube.x -= 5
+            #просрав лох 
+                if player.colliderect(top_tube) or player.colliderect(bottom_tube):
+                    which_window = "MENU"
+
+                if top_tube.right < player.left and i not in passed_tubes:
+                    passed_tubes.append(i)
+                    score += 1
+
+            score_text = score_font.render(f"SCORE: {score}", True, "yellow")
+            window.blit(score_text, (WIN_SIZE[0] - score_text.get_width() - 30, 25))
+
+            back_button.draw(window)
+            if back_button.active():
                 which_window = "MENU"
-                
-            if top_tube.right < player.left and i not in passed_tubes:
-                passed_tubes.append(i)
-                score += 1
 
-        score_text = score_font.render(f"SCORE: {score}", True, "yellow")
-        window.blit(score_text, (WIN_SIZE[0] - score_text.get_width() - 30, 25))
+        clock.tick(60)
+        pygame.display.flip()
 
-        back_button.draw(window)
-        if back_button.active():
-            which_window = "MENU"
-
-    clock.tick(60)
-    pygame.display.flip()
-
-pygame.quit()
+    pygame.quit()
