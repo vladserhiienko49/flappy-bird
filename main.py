@@ -86,7 +86,7 @@ score = 0
 
 y_vel = 0.0
 gravity = 0.6
-TRASH = 0.002
+TRASH = 0.003
 IMPULSE = -8.0
 game = True
 which_window = "MENU"
